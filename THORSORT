@@ -1,0 +1,140 @@
+'''
+This file implements the Thor-Sort function
+
+The implementation does not include the post-analysis part of the method 
+'''
+from Thor2 import Thor2
+import pandas as pd
+import numpy as np
+
+def ThorSort(DecisionMatrix, DecisionMatrix_pert, Profiles, Profiles_pert,
+             p, q, d, w, w_pert, alternative_names=None, post_class=False):
+    """
+    Inputs:
+        DecisionMatrix: npArray (mxn) - decision matrix
+        DecisionMatrix_pert: npArray (mxn) - pertinences of the decision matrix
+        Profiles: matrix of profiles
+        Profiles_pert: matrix of pertinences of the profiles
+        p: npArray (n) - preference thresholds
+        q: npArray (n) - indiference thresholds
+        d: npArray (n) - veto thresholds
+        w: npArray (n) - weights
+        w_pert: npArray (n) - weights pertinences
+        alternative_names: lista de strings - name of the alternatives
+        profiles_names: names of the profiles
+
+    """
+    m = DecisionMatrix.shape[0] # Number of alternativas (rows of X)
+    n = DecisionMatrix.shape[1] # Number of criteria
+
+    if alternative_names is None:
+        alternative_names = ['a_'+ str(i+1) for i in range (m)]
+    
+    m_profiles = Profiles.shape[0] # Number of profiles
+
+    profile_names = ["Profile_" + str(i+1) for i in range (m_profiles)]
+    
+    S1_class_opt = np.ones(m, dtype = int)
+    S2_class_opt = np.ones(m, dtype = int)
+    S3_class_opt = np.ones(m, dtype = int)
+    
+    S1_class_pe = np.ones(m, dtype = int)
+    S2_class_pe = np.ones(m, dtype = int)
+    S3_class_pe = np.ones(m, dtype = int)
+
+    for i in range (m):
+        M = np.concatenate((DecisionMatrix[i].reshape((1,n)), Profiles), axis=0)
+        M_pert = np.concatenate((DecisionMatrix_pert[i].reshape((1,n)), Profiles_pert), axis = 0)
+        M_names = [alternative_names[i]] + profile_names
+        T1_relations, T2_relations, T3_relations = Thor2 (M, M_pert, p, q, d, w, w_pert, M_names) [0:3]
+        
+        # optimistic sorting - S1    
+        h = m_profiles
+        while h > 0:
+            if T1_relations[h, 0] == 'T':
+                S1_class_opt[i] = h + 1
+                break
+            h=h-1
+
+        # optimistic sorting - S2    
+        h = m_profiles
+        while h > 0:
+            if T2_relations[h, 0] == 'T':
+                S2_class_opt[i] = h + 1
+                break
+            h=h-1        
+        
+        # optimistic sorting - S3 
+        h = m_profiles
+        while h > 0:
+            if T3_relations[h, 0] == 'T':
+                S3_class_opt[i] = h + 1
+                break
+            h=h-1
+
+        # pessimistic sorting - S1   
+        S1_class_pe[i] = m_profiles + 1
+        h = 1
+        while h < m_profiles + 1:
+            if T1_relations[0, h] == 'T':
+                S1_class_pe[i] = h
+                break
+            h=h+1
+        
+        # pessimistic sorting - S2  
+        S2_class_pe[i] = m_profiles + 1
+        h = 1
+        while h < m_profiles + 1:
+            if T2_relations[0, h] == 'T':
+                S2_class_pe[i] = h
+                break
+            h=h+1
+
+        # pessimistic sorting - S3  
+        S3_class_pe[i] = m_profiles + 1
+        h = 1
+        while h < m_profiles + 1:
+            if T3_relations[0, h] == 'T':
+                S3_class_pe[i] = h
+                break
+            h=h+1
+    
+    Optimistic_sorting = pd.DataFrame({'S1':S1_class_opt,
+                                    'S2':S2_class_opt,
+                                    'S3':S3_class_opt}, index = alternative_names)
+
+    Pessimistic_sorting = pd.DataFrame({'S1':S1_class_pe,
+                                    'S2':S2_class_pe,
+                                    'S3':S3_class_pe}, index = alternative_names)
+
+    # If post_class is True, downgrade classes of alternatives dominated by alternatives in classes less prefered
+    # The default is False (alternatives must be classified based only on their relations with the profiles).
+    if post_class == True:
+        T1, T2, T3 = Thor2(DecisionMatrix,DecisionMatrix_pert, p, q, d, w, w_pert, alternative_names) [0:3]
+        for i in range (m):
+            for j in range (m):
+                
+                # if i dominates j and j got a better class, class[j]=class[i]
+                if T1[i,j] == "T":  
+                    if S1_class_opt[j] < S1_class_opt[i]: S1_class_opt[j] = S1_class_opt[i]
+                    if S1_class_pe[j] < S1_class_pe[i]: S1_class_pe[j] = S1_class_pe[i] 
+                
+                if T2[i,j] == "T":  
+                    if S2_class_opt[j] < S2_class_opt[i]: S2_class_opt[j] = S2_class_opt[i]
+                    if S2_class_pe[j] < S2_class_pe[i]: S2_class_pe[j] = S2_class_pe[i]
+                
+                if T3[i,j] == "T":  
+                    if S3_class_opt[j] < S3_class_opt[i]: S3_class_opt[j] = S3_class_opt[i]
+                    if S3_class_pe[j] < S3_class_pe[i]: S3_class_pe[j] = S3_class_pe[i]
+                
+        Optimistic_sorting_post = pd.DataFrame({'S1':S1_class_opt,
+                                        'S2':S2_class_opt,
+                                        'S3':S3_class_opt}, index = alternative_names)
+
+        Pessimistic_sorting_post = pd.DataFrame({'S1':S1_class_pe,
+                                        'S2':S2_class_pe,
+                                        'S3':S3_class_pe}, index = alternative_names)
+
+        return Optimistic_sorting_post, Pessimistic_sorting_post
+    
+    return Optimistic_sorting, Pessimistic_sorting
