@@ -1,0 +1,137 @@
+'''
+This file presents an implementation of the Thor 2 method
+
+The implementation does not include the post-analysis part of the method 
+'''
+
+#importing packages
+import pandas as pd
+import numpy as np
+
+def Thor2 (X, X_pert, p, q, d, w, w_pert, alternative_names = None):
+    """
+    Inputs:
+        X: npArray (mxn) - decision matrix
+        X_pert: npArray (mxn) - pertinences of the decision matrix
+        p: npArray (n) - preference thresholds
+        q: npArray (n) - indiference thresholds
+        d: npArray (n) - veto thresholds
+        w: npArray (n) - weights
+        w_pert: npArray (n) - weights pertinences
+        alternative_names: lista de strings - name of the alternatives
+    
+    Outputs:
+        T1_relations: npArray (mxm) - matrix indicating Thor2 relations according with S1
+        T2_relations: npArray (mxm) - matrix indicating Thor2 relations according with S2
+        T3_relations: npArray (mxm) - matrix indicating Thor2 relations according with S3
+        S1_values: npArray (mxm) - matrix of values - S1
+        S2_values: npArray (mxm) - matrix of values - S2
+        S3_values: npArray (mxm) - matrix of values - S3
+        Rankings: pd.DataFrame - Dataframe with the rankings provided by S1, S2 e S3
+    """
+    
+    m = X.shape[0] # number of alternatives (rows of X)
+    n = X.shape[1] # number of criteria (columns of X)
+    
+    # if the alternative names are not provided, create a list:
+    if alternative_names is None:
+        alternative_names = ['a_'+ str(i+1) for i in range (m)]
+
+    Perts = np.zeros(shape = (n,m,m)) # tensor of pertinence multipliers (nxmxm) 
+    Diffs = np.zeros(shape=(n,m,m)) # tensor of differences (nxmxm)
+    Relations = np.empty(shape=(n,m,m), dtype='object') # tensor of relations (nxmxm)
+    Relations_Values = np.zeros(shape=(n,m,m)) # tensor of values on relations (nxmxm)
+    for j in range (n): 
+        for k in range (m):
+            for l in range (m):
+                Perts[j,k,l] = (X_pert[k,j] + X_pert[l,j] + w_pert[j])/3 
+                Diffs [j,k,l] = X[k,j] - X[l,j]  
+                Relations [j,k,l] = 'P' if Diffs[j,k,l] > p[j] else 'Q' if  Diffs[j,k,l] > q[j]\
+                     else 'I' if -q[j] <= Diffs[j,k,l] else 'NR' 
+                
+                Relations_Values [j,k,l] = w[j] if Relations[j,k,l] == 'P'\
+                     else w[j] * ((Diffs[j,k,l] - q[j])/(p[j]-q[j]) * 0.5 + 0.5) if  Relations[j,k,l] == 'Q'\
+                         else w[j]/2 if Relations[j,k,l] == 'I' else 0
+    
+    V = np.multiply(Relations_Values, Perts)
+
+    T1_relations = np.empty(shape=(m,m), dtype='object')
+    T2_relations = np.empty(shape=(m,m), dtype='object')
+    T3_relations = np.empty(shape=(m,m), dtype='object')
+    S1_values = np.zeros(shape = (m,m))
+    S2_values = np.zeros(shape = (m,m))
+    S3_values = np.zeros(shape = (m,m))
+
+    for i in range (m):
+        for j in range (m):
+            # S1
+            S1_apoio = [V[c,i,j] for c in range (n) if Relations [c,i,j] == 'P']
+            S1_contra_pt1 = [V[c,i,j] for c in range (n) if Relations[c,i,j] in ['Q', 'I']]
+            S1_contra_pt2 = [V[c,j,i] for c in range (n) if Relations[c,j,i] in ['P', 'Q']]
+            S1_contra = S1_contra_pt1 + S1_contra_pt2
+                    
+            T1_relations[i,j] = 'T' if np.sum(S1_apoio) > np.sum(S1_contra) else 'N'
+            if any([Diffs[c,j,i] >= d[c] for c in range (n)]): T1_relations[i,j] = 'N'
+            if any([Diffs[c,i,j] >= d[c] for c in range (n)]): T1_relations[i,j] = 'N'
+            if T1_relations[i,j] == 'T': S1_values[i,j] = np.sum(S1_apoio) / (np.sum(S1_apoio) + np.sum(S1_contra))
+            
+            # S2
+            S2_apoio = [V[c,i,j] for c in range (n) if Relations [c,i,j] in ['P','Q']]
+            S2_contra_pt1 = [V[c,i,j] for c in range (n) if Relations[c,i,j] in ['I']]
+            S2_contra_pt2 = [V[c,j,i] for c in range (n) if Relations[c,j,i] in ['P', 'Q']]
+            S2_contra = S2_contra_pt1 + S2_contra_pt2 #junta as duas partes em uma lista
+                    
+            T2_relations[i,j] = 'T' if np.sum(S2_apoio) > np.sum(S2_contra) else 'N'
+            if any([Diffs[c,j,i] >= d[c] for c in range (n)]): T2_relations[i,j] = 'N'
+            if any([Diffs[c,i,j] >= d[c] for c in range (n)]): T2_relations[i,j] = 'N'
+            if T2_relations[i,j] == 'T': S2_values[i,j] = np.sum(S2_apoio) / (np.sum(S2_apoio) + np.sum(S2_contra))
+            
+            #S3
+            S3_apoio = [V[c,i,j] for c in range (n) if Relations [c,i,j] in ['P','Q', 'I']]
+            S3_contra = [V[c,j,i] for c in range (n) if Relations[c,j,i] in ['P', 'Q']]
+                    
+            T3_relations[i,j] = 'T' if np.sum(S3_apoio) > np.sum(S3_contra) else 'N'
+
+            if any([Diffs[c,j,i] >= d[c] for c in range (n)]): T3_relations[i,j] = 'N'
+            if any([Diffs[c,i,j] >= d[c] for c in range (n)]): T3_relations[i,j] = 'N' 
+            
+            if T3_relations[i,j] == 'T': S3_values[i,j] = np.sum(S3_apoio) / (np.sum(S3_apoio) + np.sum(S3_contra))
+
+    for i in range (m):
+        for j in range (m):
+            if i==j:
+                S1_values[i,j] = 0
+                S1_values[j,i] = 0
+                S2_values[i,j] = 0
+                S2_values[j,i] = 0
+                S3_values[i,j] = 0
+                S3_values[j,i] = 0
+                T1_relations[i,j], T1_relations[j,i], T2_relations[i,j], T2_relations[j,i], T3_relations[i,j], T3_relations[j,i] = 'N','N','N','N','N','N'
+
+            
+            else:
+                if T1_relations[i,j] == 'N' and T1_relations[j,i] == 'N': 
+                    S1_values[i,j] = 0.5
+                    S1_values[j,i] = 0.5
+                else:
+                    if T1_relations[i,j] == 'T' and T1_relations[j,i] == 'N':  
+                        S1_values[j,i] = 0
+                
+                if T2_relations[i,j] == 'N' and T2_relations[j,i] == 'N': 
+                    S2_values[i,j] = 0.5
+                    S2_values[j,i] = 0.5
+                else:
+                    if T2_relations[i,j] == 'T' and T2_relations[j,i] == 'N':  
+                        S2_values[j,i] = 0
+                
+                if T3_relations[i,j] == 'N' and T3_relations[j,i] == 'N': 
+                    S3_values[i,j] = 0.5 
+                    S3_values[j,i] = 0.5
+                else:
+                    if T3_relations[i,j] == 'T' and T3_relations[j,i] == 'N':  S3_values[j,i] = 0
+    
+    Rankings = pd.DataFrame({'S1': S1_values.sum(axis=1),
+                            'S2': S2_values.sum(axis=1),
+                            'S3': S3_values.sum(axis=1)}, index = alternative_names)
+    
+    return T1_relations, T2_relations, T3_relations, S1_values, S2_values, S3_values, Rankings
