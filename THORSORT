@@ -24,7 +24,7 @@ def ThorSort(DecisionMatrix, DecisionMatrix_pert, Profiles, Profiles_pert,
         profiles_names: names of the profiles
 
     """
-    m = DecisionMatrix.shape[0] # Number of alternativas (rows of X)
+    m = DecisionMatrix.shape[0] # Number of alternatives (rows of X)
     n = DecisionMatrix.shape[1] # Number of criteria
 
     if alternative_names is None:
